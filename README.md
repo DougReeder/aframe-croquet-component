@@ -14,6 +14,9 @@ Live basic project at Glitch: [https://glitch.com/~aframe-croquet-component](htt
 
 [Sample world](./public/index.html) in this repository
 
+A [fuller example](https://xalot.surge.sh/)
+
+
 Getting Started
 ---------------
 
@@ -96,6 +99,15 @@ If the avatar model does not face the positive Z-axis and have eyes close to y=0
 
 During Croquet initialization, the `data-seeds` attribute of the scene element will be set to a list of 25 random numbers - the same list on every client.
 These numbers can be used for procedural generation of the world.
+
+
+Restrictions
+------------
+
+Do not assign an element an ID that start with `avatar-`. Those are reserved for system-created avatars.
+
+Any element *referred to* by a `multiuser` element **must** have an ID (which must be unique).  So it's best to assign an ID to every `multiuser` element and anything it interacts with.
+
 
 Croquet Component Attributes
 ----------------------------

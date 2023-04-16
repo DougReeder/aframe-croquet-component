@@ -266,7 +266,7 @@ class ComponentModel extends Croquet.Model {
                 anim: false
             }
         };
-        Object.assign(this, options);
+        this.merge(this, options);
 
         this.sceneModel = this.wellKnownModel("modelRoot");
         this.subscribe(this.id, 'changeComponent', this.changeComponent);
@@ -629,12 +629,14 @@ AFRAME.registerComponent('multiuser', {
             }
         }
 
-        Reflect.defineProperty(this.el,
-            'setAttributeAFrame', {
-            value: (this.originalSetAttribute)(),
-            writable: true
+        if ('function' !== typeof this.el.setAttributeAFrame) {
+            Reflect.defineProperty(this.el,
+                'setAttributeAFrame', {
+                    value: this.el.setAttribute,
+                    writable: true
+                }
+            )
         }
-        )
 
         Reflect.defineProperty(this.el,
             'setAttribute', {
@@ -651,94 +653,16 @@ AFRAME.registerComponent('multiuser', {
         })
     },
 
-    //Original definition from A-Frame master
-    originalSetAttribute: function () {
-        var singlePropUpdate = {};
-        var MULTIPLE_COMPONENT_DELIMITER = '__';
-        var COMPONENTS = AFRAME.components;
-
-        return function (attrName, arg1, arg2) {
-            var newAttrValue;
-            var clobber;
-            var componentName;
-            var delimiterIndex;
-            var isDebugMode;
-            var key;
-
-            delimiterIndex = attrName.indexOf(MULTIPLE_COMPONENT_DELIMITER);
-            componentName = delimiterIndex > 0 ? attrName.substring(0, delimiterIndex) : attrName;
-
-            // Not a component. Normal set attribute.
-            if (!COMPONENTS[componentName]) {
-                if (attrName === 'mixin') { this.mixinUpdate(arg1); }
-                ANode.prototype.setAttribute.call(this, attrName, arg1);
-                return;
-            }
-
-            // Initialize component first if not yet initialized.
-            if (!this.components[attrName] && this.hasAttribute(attrName)) {
-                this.updateComponent(
-                    attrName,
-                    window.HTMLElement.prototype.getAttribute.call(this, attrName));
-            }
-
-            // Determine new attributes from the arguments
-            if (typeof arg2 !== 'undefined' &&
-                typeof arg1 === 'string' &&
-                arg1.length > 0 &&
-                typeof AFRAME.utils.styleParser.parse(arg1) === 'string') {
-                // Update a single property of a multi-property component
-                for (key in singlePropUpdate) { delete singlePropUpdate[key]; }
-                newAttrValue = singlePropUpdate;
-                newAttrValue[arg1] = arg2;
-                clobber = false;
-            } else {
-                // Update with a value, object, or CSS-style property string, with the possiblity
-                // of clobbering previous values.
-                newAttrValue = arg1;
-                clobber = (arg2 === true);
-            }
-
-            // Update component
-            this.updateComponent(attrName, newAttrValue, clobber);
-
-            // In debug mode, write component data up to the DOM.
-            isDebugMode = this.sceneEl && this.sceneEl.getAttribute('debug');
-            if (isDebugMode) { this.components[attrName].flushToDOM(); }
-        };
-    },
-
-    //Modified definition from A-Frame master
+    // Calls A-Frame version, then emits event for View
     croquetSetAttribute: function () {
         var singlePropUpdate = {};
-        var MULTIPLE_COMPONENT_DELIMITER = '__';
-        var COMPONENTS = AFRAME.components;
         let self = this
 
         return function (attrName, arg1, arg2) {
+            self.el.setAttributeAFrame(attrName, arg1, arg2);
+
             var newAttrValue;
-            var clobber;
-            var componentName;
-            var delimiterIndex;
-            var isDebugMode;
             var key;
-
-            delimiterIndex = attrName.indexOf(MULTIPLE_COMPONENT_DELIMITER);
-            componentName = delimiterIndex > 0 ? attrName.substring(0, delimiterIndex) : attrName;
-
-            // Not a component. Normal set attribute.
-            if (!COMPONENTS[componentName]) {
-                if (attrName === 'mixin') { this.mixinUpdate(arg1); }
-                ANode.prototype.setAttribute.call(this, attrName, arg1);
-                return;
-            }
-
-            // Initialize component first if not yet initialized.
-            if (!this.components[attrName] && this.hasAttribute(attrName)) {
-                this.updateComponent(
-                    attrName,
-                    window.HTMLElement.prototype.getAttribute.call(this, attrName));
-            }
 
             // Determine new attributes from the arguments
             if (typeof arg2 !== 'undefined' &&
@@ -749,26 +673,16 @@ AFRAME.registerComponent('multiuser', {
                 for (key in singlePropUpdate) { delete singlePropUpdate[key]; }
                 newAttrValue = singlePropUpdate;
                 newAttrValue[arg1] = arg2;
-                clobber = false;
             } else {
-                // Update with a value, object, or CSS-style property string, with the possiblity
-                // of clobbering previous values.
+                // Updates with a value, object, or CSS-style property string
                 newAttrValue = arg1;
-                clobber = (arg2 === true);
             }
-
-            // Update component
-            this.updateComponent(attrName, newAttrValue, clobber);
 
             if (Q.THROTTLED_ATTRIBUTES.includes(attrName)) {
                 self.updateViewThrottled[attrName](attrName, newAttrValue);
             } else {
-                this.emit('setAttribute-event', { data: { attrName: attrName, value: newAttrValue, clobber: clobber } }, false)
+                this.emit('setAttribute-event', { data: { attrName: attrName, value: newAttrValue } }, false)
             }
-
-            // In debug mode, write component data up to the DOM.
-            isDebugMode = this.sceneEl && this.sceneEl.getAttribute('debug');
-            if (isDebugMode) { this.components[attrName].flushToDOM(); }
         };
     },
 
