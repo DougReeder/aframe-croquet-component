@@ -126,7 +126,7 @@ class RootModel extends Croquet.Model {
             this.onComponentAdd(options)
         }
 
-        this.publish(this.sessionId, 'user-added', viewId);
+        this.publish(this.sessionId, 'user-added', {viewId, ...data});
     }
 
 
@@ -142,7 +142,7 @@ class RootModel extends Croquet.Model {
         }
         console.info(`user ${data?.color} ${viewId} left after ${time / 1000} seconds (${this.viewCount} of ${this.userData.size} user(s) online):`, data);
         this.onDeleteComponent(elID)
-        this.publish(this.sessionId, 'user-exit', viewId);
+        this.publish(this.sessionId, 'user-exit', {viewId, ...data});
         //this.publish(this.viewId, 'onDeleteUser', viewId);
     }
 
@@ -212,13 +212,18 @@ class RootView extends Croquet.View {
         this.subscribe(model.id, 'component-deleted', this.removeChild)
         this.subscribe(this.viewId, "synced", this.synced);
 
-        for (const [id, data] of model.userData.entries()) {
+        console.group(`RootView created: ` + this.viewId);
+        for (const [viewId, data] of model.userData.entries()) {
+            const userLabel = viewId === this.viewId ? 'local' : 'remote';
+            console.debug(`${userLabel} user:`, data);
             if (data?.online) {
-                this.addViewComponent(Q.AVATAR_PREFIX + id);
+                this.addViewComponent(Q.AVATAR_PREFIX + viewId);
+                this.onUserAdded({viewId, ...data});   // The user-added message was sent before this view existed
             } else {
-                this.removeChild(Q.AVATAR_PREFIX + id);
+                this.removeChild(Q.AVATAR_PREFIX + viewId);
             }
         }
+        console.groupEnd();
     }
 
     addViewComponent(elID) {
@@ -234,16 +239,21 @@ class RootView extends Croquet.View {
     }
 
     synced() {
-        console.info('RootView: synced: creating views for models:', this.sceneModel.children);
+        console.group('RootView: synced: creating views for models:', this.sceneModel.children);
         for (const el of this.sceneModel.children.keys()) {
             this.addViewComponent(el);
         }
+        console.groupEnd();
     }
 
-    onUserAdded(id) {
+    onUserAdded(data) {
+        const userLabel = data.viewId === this.viewId ? 'local' : 'remote';
+        console.info(`RootView: ${userLabel} user added:`, data);
+        this.aframeScene.emit('user-added', data);
     }
 
-    onUserExit(id) {
+    onUserExit(data) {
+        this.aframeScene.emit('user-exit', data);
     }
 
     removeChild(childID) {
@@ -414,7 +424,10 @@ class ComponentView extends Croquet.View {
                 element.setAttribute(attrName, toAFrameValue(attrName, attrValue));
             }
         }
-        const parent = document.getElementById(model.parentID);
+        let parent;
+        if (model.parentID) {
+            parent = document.getElementById(model.parentID);
+        }
         if (parent) {
             parent.appendChild(element);
             console.debug(`ComponentView: added element:`, element, `as child of`, parent);
@@ -472,7 +485,7 @@ class ComponentView extends Croquet.View {
         if (this.aframeEl) {
             try {
                 console.debug(`ComponentView: removing element ${this.elementModel?.elID} and view`);
-                this.aframeEl.parentNode.removeChild(this.aframeEl);
+                this.aframeEl.parentNode?.removeChild(this.aframeEl);
                 this.aframeEl.destroy();
             } catch (err) {
                 console.error(`while removing A-Frame element:`, err);
@@ -867,11 +880,16 @@ function toAFrameValue(attrName, attrValue) {
     switch (attrName) {
         case 'position':
         case 'rotation':
-        case 'scale':
-            if ('string' === typeof attrValue) {
+            if ('string' === typeof attrValue && attrValue.length >= 5) {
                 return attrValue;
             } else {
-                return `${attrValue.x} ${attrValue.y} ${attrValue.z}`;
+                return `${attrValue?.x || 0} ${attrValue?.y || 0} ${attrValue?.z || 0}`;
+            }
+        case 'scale':
+            if ('string' === typeof attrValue && attrValue.length >= 5) {
+                return attrValue;
+            } else {
+                return `${attrValue?.x || 1} ${attrValue?.y || 1} ${attrValue?.z || 1}`;
             }
         case 'rotationquaternion':
             return attrValue;
