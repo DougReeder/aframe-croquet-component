@@ -9,8 +9,9 @@ if (typeof AFRAME === 'undefined') {
 
 let Q = Croquet.Constants;
 Q.STEP_MS = 1000 / 20;
+Q.MODEL_CHANGED_PREFIX = 'modelChanged-'
 Q.AVATAR_PREFIX = 'avatar-';
-Q.THROTTLED_ATTRIBUTES = ['position', 'rotation', 'rotationquaternion', 'scale'];
+Q.THROTTLED_ATTRIBUTES = ['position', 'rotation', 'rotationquaternion', 'scale', 'visible'];
 Q.SYNCABLE_ATTRIBUTES = [...Q.THROTTLED_ATTRIBUTES, 'multiuser'];
 Q.COLORS = ['purple', 'blue', 'green', 'orange', 'yellow', 'red', 'gray', 'white', 'maroon', 'navy', 'aqua', 'lime', 'olive', 'teal', 'fuchsia', 'silver', 'black'];
 Q.CAMERA_HEIGHT = 1.6;
@@ -339,7 +340,11 @@ class ComponentModel extends Croquet.Model {
     changeComponent(changed) {
         //update model components
         this.merge(this.components, changed.data);
-        this.publish(this.id, 'modelChanged', { senderId: changed.senderId, data: changed.data });
+        for (const [key, value] of Object.entries(changed.data)) {
+            if (Q.SYNCABLE_ATTRIBUTES.includes(key)) {
+                this.publish(this.id, Q.MODEL_CHANGED_PREFIX + key, value);
+            }
+        }
         //console.log('ComponentModel: Model is changed with: ', diff, ' from ', changed.senderId);
     }
 }
@@ -362,7 +367,9 @@ class ComponentView extends Croquet.View {
             onSetAttribute: this.onSetAttribute.bind(this),
         }
 
-        this.subscribe(model.id, { event: 'modelChanged', handling: 'oncePerFrame' }, this.changeView);
+        for (const attrName of Q.SYNCABLE_ATTRIBUTES) {
+            this.subscribe(model.id, { event: Q.MODEL_CHANGED_PREFIX + attrName, handling: 'oncePerFrame' }, this.changeViewAttr.bind(this, attrName));
+        }
 
         if (Object.entries(model.components).length > 1) {   // model has data
             // TODO: find better way to ensure ComponentViews get initialized, and with current data
@@ -373,7 +380,7 @@ class ComponentView extends Croquet.View {
         }
     }
 
-    initViewFromModel() {
+    initViewFromModel(isRevealed) {
         if (this.isInitialized) { return; }
         console.info('ComponentView: init A-Frame element from model:', this.elementModel);
 
@@ -467,15 +474,22 @@ class ComponentView extends Croquet.View {
         let data = event.detail.data;
         const [isSyncable, substitutedValue] = filterComponent(isAvatar, data.attrName, data.value);
         if (isSyncable) {
+            if (!isAvatar) {
+                console.debug(`onSetAttribute syncing`, data.attrName, substitutedValue)
+            }
             this.publish(this.elementModel.id, 'changeComponent', { data: { [data.attrName]: substitutedValue }, senderId: this.viewId });
+        } else {
+            console.debug(`onSetAttribute not syncing`, data.attrName, substitutedValue)
         }
     }
 
-    changeView(changed) {
+    changeViewAttr(attrName, attrValue) {
         if (this.aframeEl) {
-            this.aframeEl.emit('update-aframe-element', {data: changed.data});
+            const data = {};
+            data[attrName] = attrValue;
+            this.aframeEl.emit('update-aframe-element', {data});
         } else {
-            console.warn(`ComponentView: can't update non-existent element:`, this.elementModel?.elID);
+            console.warn(`changeViewAttr: can't update non-existent element ${this.elementModel?.elID} attribute ${attrName}`);
         }
     }
 
@@ -637,11 +651,6 @@ AFRAME.registerComponent('multiuser', {
         let self = this;
         this.scene = this.el.sceneEl;
         this.ready = false;
-        // Alas, this throttling won't be coordinated with Croquet frames
-        this.updateViewThrottled = {};
-        for (const attrName of Q.THROTTLED_ATTRIBUTES) {
-            this.updateViewThrottled[attrName] = AFRAME.utils.throttle(this.updateView, Q.STEP_MS, this);
-        }
 
         if (this.el.dataset.isLocalAvatar) {
             this.cameraEnt = this.scene.querySelector('[camera]');
@@ -695,7 +704,9 @@ AFRAME.registerComponent('multiuser', {
         this.el.addEventListener('update-aframe-element', function (event) {
             for (const [key, value] of Object.entries(event.detail.data)) {
                 self.el.setAttributeAFrame(key, toAFrameValue(key, value));
-                // console.log('multiuser component: Set attribute on element from model: ', key, ' with: ', value)
+                if (! this.id?.startsWith('avatar')) {
+                    console.log(`multiuser component: from model, set attribute “${key}” on element to:`, value)
+                }
             }
         })
     },
@@ -810,7 +821,7 @@ AFRAME.registerComponent('multiuser', {
             this.updateComponent(attrName, newAttrValue, clobber);
 
             if (Q.THROTTLED_ATTRIBUTES.includes(attrName)) {
-                self.updateViewThrottled[attrName](attrName, newAttrValue);
+                self.updateView(attrName, newAttrValue);
             } else {
                 this.emit('setAttribute-event', { data: { attrName: attrName, value: newAttrValue, clobber: clobber } }, false)
             }
