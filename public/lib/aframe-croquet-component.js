@@ -9,10 +9,11 @@ if (typeof AFRAME === 'undefined') {
 
 let Q = Croquet.Constants;
 Q.STEP_MS = 1000 / 20;
-Q.MODEL_CHANGED_PREFIX = 'modelChanged-'
+Q.MODEL_CHANGED = 'modelChanged';
+Q.MODEL_CHANGED_PREFIX = Q.MODEL_CHANGED + '-';
 Q.AVATAR_PREFIX = 'avatar-';
-Q.THROTTLED_ATTRIBUTES = ['position', 'rotation', 'rotationquaternion', 'scale', 'visible'];
-Q.SYNCABLE_ATTRIBUTES = [...Q.THROTTLED_ATTRIBUTES, 'multiuser'];
+Q.THROTTLED_ATTRIBUTES = ['position', 'rotation', 'rotationquaternion', 'scale'];
+Q.AVATAR_SYNCABLE_ATTRIBUTES = [...Q.THROTTLED_ATTRIBUTES, 'multiuser'];
 Q.COLORS = ['purple', 'blue', 'green', 'orange', 'yellow', 'red', 'gray', 'white', 'maroon', 'navy', 'aqua', 'lime', 'olive', 'teal', 'fuchsia', 'silver', 'black'];
 Q.CAMERA_HEIGHT = 1.6;
 Q.INITIAL_PLACEMENT_RADIUS = 2;
@@ -20,10 +21,19 @@ Q.FLIP_Z = new THREE.Quaternion(0, -1, 0, 0);
 Q.FLIP_Z_INV = new THREE.Quaternion(0, 1, 0, 0);
 
 class RootModel extends Croquet.Model {
+    static types() {
+        return {
+            "THREE.Quaternion": {
+                cls: THREE.Quaternion,
+                write: q => [q.x, q.y, q.z, q.w],        // serialized as '[...,...,...,...]'
+                read: q => new THREE.Quaternion(q[0], q[1], q[2], q[3]),
+            },
+        }
+    }
 
     init(options) {
         super.init(options);
-        this.children = new Map();
+        this.syncedElementData = new Map();
         //Aware of Users
         this.userData = new Map();
         this.spawnPoint = options.spawnPoint || {x: 0, y: 0, z: 0};
@@ -37,6 +47,7 @@ class RootModel extends Croquet.Model {
         this.subscribe(this.id, 'add-multiuser-model', this.onComponentAdd);
         this.subscribe(this.id, 'delete-multiuser-model', this.onDeleteComponent);
         this.subscribe(this.id, 'updateOptions', this.updateOptions)
+        this.subscribe(this.id, 'setComponentInModel', this.setComponentInModel);
     }
 
     newId() {
@@ -56,26 +67,20 @@ class RootModel extends Croquet.Model {
     }
 
     onDeleteComponent(elID) {
-
-        let component = this.children.get(elID);
-        if (component) {
-            component.destroy();
-            this.children.delete(elID);
-            console.debug("RootModel: Model component deleted:", elID, component);
-            this.publish(this.id, 'component-deleted', elID);
+        const elementData = this.syncedElementData.get(elID);
+        if (elementData) {
+            this.syncedElementData.delete(elID);
+            console.debug("RootModel: deleted element data:", elID, elementData);
+            this.publish(this.id, 'element-deleted', elID);
         }
-
     }
 
     onComponentAdd(data) {
-
         let elID = data.elID;
-
-        if (!this.children.has(elID)) {
-            let component = ComponentModel.create(data);
-            this.children.set(elID, component);
-            console.debug("RootModel: Model component added:", elID, component);
-            this.publish(this.id, 'component-added', elID);
+        if (!this.syncedElementData.has(elID)) {
+            this.syncedElementData.set(elID, data);
+            console.debug("RootModel: added data for element:", elID, data);
+            this.publish(this.id, 'element-added', elID);
         }
     }
 
@@ -105,9 +110,10 @@ class RootModel extends Croquet.Model {
         }
 
         const elID = Q.AVATAR_PREFIX + viewId;
-        let userModel = this.children.get(elID);
-        if (userModel) {
-            console.debug(`RootModel: user ${data.color} ${viewId} joining; userModel exists:`, userModel);
+        const userElementData = this.syncedElementData.get(elID);
+        if (userElementData) {
+            console.debug(`RootModel: user ${data.color} ${viewId} joining; elementData exists:`, userElementData);
+
         } else {
             const options = {
                 elID: elID,
@@ -123,7 +129,7 @@ class RootModel extends Croquet.Model {
                     multiuser: {},
                 }
             }
-            console.debug(`RootModel: user ${data.color} ${viewId} joining; created userModel:`, options);
+            console.debug(`RootModel: user ${data.color} ${viewId} joining; adding elementData:`, options);
             this.onComponentAdd(options)
         }
 
@@ -136,10 +142,10 @@ class RootModel extends Croquet.Model {
         data.online = false;   // retains data, including color & positions
         const time = this.now() - this.userData.get(viewId)?.start;
         const elID = Q.AVATAR_PREFIX + viewId;
-        const userModel = this.children.get(elID);
-        if (userModel) {
-            data.position = structuredClone(userModel.components.position);
-            data.rotation = structuredClone(userModel.components.rotation);
+        const userElementData = this.syncedElementData.get(elID);
+        if (userElementData) {
+            data.position = structuredClone(userElementData.components.position);
+            data.rotation = structuredClone(userElementData.components.rotation);
         }
         console.info(`user ${data?.color} ${viewId} left after ${time / 1000} seconds (${this.viewCount} of ${this.userData.size} user(s) online):`, data);
         this.onDeleteComponent(elID)
@@ -153,6 +159,40 @@ class RootModel extends Croquet.Model {
         }
     }
 
+    setComponentInModel({elID, componentName, componentValue, senderId}) {
+        const components = this.syncedElementData.get(elID)?.components;
+        if (components) {
+            this.merge(components, { [componentName]: componentValue });
+            const isAvatar = elID.startsWith('avatar');
+            if (!isAvatar) {
+                console.debug(`RootModel: setComponentInModel setting`, elID, componentName, components[componentName]);
+            }
+            const eventName = Q.THROTTLED_ATTRIBUTES.includes(componentName) ?
+              Q.MODEL_CHANGED_PREFIX + componentName :
+              Q.MODEL_CHANGED;
+            this.publish(elID, eventName, {componentName, componentValue: components[componentName]});
+        } else {
+            console.error(`RootModel: setComponentInModel: no existing components for element ${elID}`);
+        }
+    }
+
+    merge(target, source) {
+        for (const [key, value] of Object.entries(source)) {
+            if (Array.isArray(value)) {
+                target[key] = structuredClone(value);
+            } else if (value instanceof THREE.Quaternion) {   // new array replaces old
+                target[key] = value.clone();
+            } else if (value instanceof Object) {
+                if (!(target[key] instanceof Object)) {
+                    target[key] = {}
+                }
+                this.merge(target[key], value);
+            } else {
+                target[key] = value;
+            }
+        }
+    }
+
 }
 
 class RootView extends Croquet.View {
@@ -161,20 +201,22 @@ class RootView extends Croquet.View {
         super(model);
 
         let self = this;
-
-        this.children = {};
+        const userData = model.userData.get(this.viewId);
+        this.elements = new Map();
         this.sceneModel = model;
         this.aframeScene = document.querySelector('a-scene');
+        this.aframeScene.rootView = this;
         this.aframeScene.dataset.viewId = this.viewId;
-        this.aframeScene.dataset.userColor = model.userData.get(this.viewId)?.color;
+        this.aframeScene.dataset.userColor = userData.color || '#ccc';
         this.aframeScene.dataset.seeds = model.seeds;
 
         this.aframeScene.addEventListener('add-multiuser', function (event) {
             let comp = event.detail.comp;
             if (!comp.ready) {
+                if (!comp.el?.id) { throw new Error("multiuser element must have ID")}
                 comp.ready = true;
-                if (!Object.keys(self.children).includes(comp.el?.id)) {
-                    console.debug('RootView: multiuser component ready; creating ComponentModel:', comp.el?.id, event.detail);
+                if (! self.elements.has(comp.el?.id)) {
+                    console.debug('RootView: multiuser component ready; creating elementData:', comp.el?.id, event.detail);
                     const isAvatar = comp.el?.id?.startsWith(Q.AVATAR_PREFIX);
                     const components = {};
                     for (const [componentName, componentValue] of Object.entries(comp.el.components)) {
@@ -198,7 +240,7 @@ class RootView extends Croquet.View {
 
             let data = event.detail.data;
             console.debug('Deleting multiuser component from scene: ', data);
-            self.removeChild(data);
+            self.removeElement(data);
             self.publish(model.id, 'delete-multiuser-model', data);
 
         })
@@ -209,198 +251,65 @@ class RootView extends Croquet.View {
 
         this.subscribe(this.sessionId, 'user-added', this.onUserAdded);
         this.subscribe(this.sessionId, 'user-exit', this.onUserExit);
-        this.subscribe(model.id, 'component-added', this.addViewComponent);
-        this.subscribe(model.id, 'component-deleted', this.removeChild)
+        this.subscribe(model.id, 'element-added', this.addElement);
+        this.subscribe(model.id, 'element-deleted', this.removeElement)
         this.subscribe(this.viewId, "synced", this.synced);
 
-        console.group(`RootView created: ` + this.viewId);
+        console.groupCollapsed(`RootView created for user ${userData.color} ${this.viewId}`);
         for (const [viewId, data] of model.userData.entries()) {
             const userLabel = viewId === this.viewId ? 'local' : 'remote';
             console.debug(`${userLabel} user:`, data);
             if (data?.online) {
-                this.addViewComponent(Q.AVATAR_PREFIX + viewId);
+                this.addElement(Q.AVATAR_PREFIX + viewId);
                 this.onUserAdded({viewId, ...data});   // The user-added message was sent before this view existed
             } else {
-                this.removeChild(Q.AVATAR_PREFIX + viewId);
+                this.removeElement(Q.AVATAR_PREFIX + viewId);
             }
         }
         console.groupEnd();
     }
 
-    addViewComponent(elID) {
-
-        if (!Object.keys(this.children).includes(elID)) {
-            let component = this.sceneModel.children.get(elID);
-            console.debug('RootView: adding view component:', elID, component);
-            let componentView = new ComponentView(component);
-            this.children[elID] = componentView;
-        } else {
-            console.debug('RootView: View component exists:', elID);
+    addElement(elID) {
+        const elementData = this.sceneModel.syncedElementData.get(elID);
+        if (!elementData) {
+            throw new Error(`RootView: can't create element ${elID} without elementData`)
         }
-    }
-
-    synced() {
-        console.group('RootView: synced: creating views for models:', this.sceneModel.children);
-        for (const el of this.sceneModel.children.keys()) {
-            this.addViewComponent(el);
-        }
-        console.groupEnd();
-    }
-
-    onUserAdded(data) {
-        const userLabel = data.viewId === this.viewId ? 'local' : 'remote';
-        console.info(`RootView: ${userLabel} user added:`, data);
-        this.aframeScene.emit('user-added', data);
-    }
-
-    onUserExit(data) {
-        this.aframeScene.emit('user-exit', data);
-    }
-
-    removeChild(childID) {
-        const child = this.children[childID];
-        child?.detach();
-        delete this.children[childID];
-    }
-
-    detach() {
-        super.detach();
-        Object.keys(this.children).forEach(key => {
-            this.removeChild(key)
-        })
-    }
-
-}
-
-class ComponentModel extends Croquet.Model {
-    static types() {
-        return {
-            "THREE.Quaternion": {
-                cls: THREE.Quaternion,
-                write: q => [q.x, q.y, q.z, q.w],        // serialized as '[...,...,...,...]'
-                read: q => new THREE.Quaternion(q[0], q[1], q[2], q[3]),
-            },
-        }
-    }
-
-    init(options) {
-        super.init(options);
-
-        this.components = {   // position, rotation, etc. will be saved here
-            multiuser: {
-                anim: false
+        let element = this.aframeScene.querySelector('#' + elementData.elID);
+        if (element) {
+            console.group('RootView: addElement: updating element:', element);
+            for (const [componentName, componentValue] of Object.entries(elementData.components)) {
+                element.emit('update-component', {componentName, componentValue});
             }
-        };
-        Object.assign(this, options);
-
-        this.sceneModel = this.wellKnownModel("modelRoot");
-        this.subscribe(this.id, 'changeComponent', this.changeComponent);
-        this.future(Q.STEP_MS).step();
-
-    }
-
-    step() {
-
-        if (this.components.multiuser?.anim) {
-            this.rotate()
-        }
-        this.future(Q.STEP_MS).step();
-
-    }
-
-    rotate() {
-        let t = this.now()
-        let rot = this.components.rotation;
-        if (this.components.rotation) {
-            let newRotation =
-            {
-                rotation:
-                    { x: rot.x, y: Math.sin(t / 1000) * 50, z: Math.sin(t / 2000) * 30 }
-            };
-            this.changeComponent({ data: newRotation, senderId: 'model' });
-        }
-    }
-
-    merge(target, source) {
-        for (const [key, value] of Object.entries(source)) {
-            if (Array.isArray(value) ||
-                    value instanceof THREE.Quaternion) {
-                target[key] = value;
-            } else if (value instanceof Object) {
-                if (!(target[key] instanceof Object)) {
-                    target[key] = {}
-                }
-                this.merge(target[key], value);
-            } else {
-                target[key] = value;
-            }
-        }
-    }
-
-    changeComponent(changed) {
-        //update model components
-        this.merge(this.components, changed.data);
-        for (const [key, value] of Object.entries(changed.data)) {
-            if (Q.SYNCABLE_ATTRIBUTES.includes(key)) {
-                this.publish(this.id, Q.MODEL_CHANGED_PREFIX + key, value);
-            }
-        }
-        //console.log('ComponentModel: Model is changed with: ', diff, ' from ', changed.senderId);
-    }
-}
-
-
-class ComponentView extends Croquet.View {
-
-    constructor(model) {
-        super(model);
-
-        console.debug(`ComponentView: constructing from`, model);
-        this.elementModel = model;
-        this.aframeScene = document.querySelector('a-scene');
-        if (this.elementModel.elID) {
-            this.aframeEl = this.aframeScene.querySelector('#' + this.elementModel.elID);
+            console.groupEnd();
         } else {
-            throw new Error(`multiuser element must have id:` + this.elementModel);
+            console.group('RootView: addElement: creating element:', elID, elementData);
+            element = this.createElement(elementData);
+            console.groupEnd()
         }
-        this.handlers = {   // addEventListener won't add an identical function twice
-            onSetAttribute: this.onSetAttribute.bind(this),
-        }
-
-        for (const attrName of Q.SYNCABLE_ATTRIBUTES) {
-            this.subscribe(model.id, { event: Q.MODEL_CHANGED_PREFIX + attrName, handling: 'oncePerFrame' }, this.changeViewAttr.bind(this, attrName));
-        }
-
-        if (Object.entries(model.components).length > 1) {   // model has data
-            // TODO: find better way to ensure ComponentViews get initialized, and with current data
-            this.subscribe(this.viewId, "synced", this.initViewFromModel);
-            setTimeout(this.initViewFromModel.bind(this), 1000);
-        } else {   // model doesn't have data, so pull from A-Frame element
-            this.initViewFromAFrame();
-        }
-    }
-
-    initViewFromModel(isRevealed) {
-        if (this.isInitialized) { return; }
-        console.info('ComponentView: init A-Frame element from model:', this.elementModel);
-
-        if (! this.aframeEl) {
-            this.aframeEl = this.createElement(this.elementModel);
+        if (this.elements.has(elID)) {
+            console.debug('RootView: addElement: not re-subscribing', elID);
         } else {
-            // set from model components
-            this.aframeEl.emit('update-aframe-element', {data: this.elementModel.components});
+            console.info('RootView: addElement: subscribing', elID);
+            const handler = changeElementComponent.bind(element);
+            for (const componentName of Q.THROTTLED_ATTRIBUTES) {
+                this.subscribe(elID, { event: Q.MODEL_CHANGED_PREFIX + componentName, handling: 'oncePerFrame' }, handler);
+            }
+            this.subscribe(elID, { event: Q.MODEL_CHANGED, handling: 'queued' }, handler);
         }
-        this.aframeEl.addEventListener('setAttribute-event', this.handlers.onSetAttribute);
+        this.elements.set(elID, element);
 
-        this.isInitialized = true;
+        function changeElementComponent({componentName, componentValue}) {
+            this.emit('update-component', {componentName, componentValue});
+            // this.emit('update-aframe-element', {data: {[componentName]: componentValue}});
+        }
     }
 
-    createElement(model) {
+    createElement(elementData) {
         let element;
-        if (model.elID.startsWith(Q.AVATAR_PREFIX)) {
-            const avatarId = model.elID.slice(Q.AVATAR_PREFIX.length);
+        if (elementData.elID.startsWith(Q.AVATAR_PREFIX)) {
+            const avatarId = elementData.elID.slice(Q.AVATAR_PREFIX.length);
             if (avatarId === this.viewId) {   // the local user
-                console.debug(`ComponentView: creating avatar for local user ${model.color} ${avatarId}`);
+                console.debug(`RootView: creating avatar for local user ${elementData.color} ${avatarId}`);
                 element = document.createElement('a-box');
                 element.setAttribute('width', 0.5);
                 element.setAttribute('depth', 0.5);
@@ -408,110 +317,109 @@ class ComponentView extends Croquet.View {
                 element.setAttribute('visible', false);
                 element.dataset.isLocalAvatar = true;
             } else {
-                console.debug(`ComponentView: creating avatar for remote user ${model.color} ${avatarId}`);
+                console.debug(`RootView: creating avatar for remote user ${elementData.color} ${avatarId}`);
                 const avatarTemplate = document.getElementById('avatarTemplate');
                 element = avatarTemplate ?
                     avatarTemplate.content.firstElementChild.cloneNode(true) :
                     document.createElement('a-box');
             }
-            element.setAttribute('id', model.elID);
-            const pos = model.components.position;   // TODO: use toAFrameValue()
-            element.setAttribute('position', `${pos.x} ${pos.y} ${pos.z}`);
-            const rot = model.components.rotation;
-            element.setAttribute('rotation', `${rot.x} ${rot.y} ${rot.z}`);
-            element.setAttribute('color', model.color);
-            // multiuser may need to be set last
-            element.setAttribute('multiuser', AFRAME.utils.styleParser.stringify(model.components.multiuser));
+            element.setAttribute('id', elementData.elID);
+            element.setAttribute('color', elementData.color);
+            for (const componentName of Q.AVATAR_SYNCABLE_ATTRIBUTES) {
+                if (componentName in elementData.components) {
+                    const aFrameValue = toAFrameValue(componentName, elementData.components[componentName])
+                    element.setAttribute(componentName, aFrameValue);
+                }
+            }
         } else {   // ordinary A-Frame element
-            console.debug(`ComponentView: creating element from`, model);
-            element = document.createElement(model.elType);
-            element.setAttribute('id', model.elID);
+            console.debug(`RootView: creating element from`, elementData);
+            element = document.createElement(elementData.elType);
+            element.setAttribute('id', elementData.elID);
             // Model fields MUST NOT be passed to functions that might modify them.
-            for (const [attrName, attrValue] of Object.entries(model.components)) {
-                element.setAttribute(attrName, toAFrameValue(attrName, attrValue));
+            for (const [componentName, componentValue] of Object.entries(elementData.components)) {
+                element.setAttribute(componentName, toAFrameValue(componentName, componentValue));
             }
         }
         let parent;
-        if (model.parentID) {
-            parent = document.getElementById(model.parentID);
+        if (elementData.parentID) {
+            parent = document.getElementById(elementData.parentID);
         }
         if (parent) {
             parent.appendChild(element);
-            console.debug(`ComponentView: added element:`, element, `as child of`, parent);
+            console.debug(`RootView: added element:`, element, `as child of`, parent);
         } else {
             AFRAME.scenes[0].appendChild(element);
-            console.debug(`ComponentView: added element to scene:`, element);
+            console.debug(`RootView: added element to scene:`, element);
         }
+
         return element;
     }
 
-    initViewFromAFrame() {
-        if (!this.aframeEl) {
-            console.error(`ComponentView: need A-Frame element to init empty ComponentModel:`, this.elementModel?.elType, this.elementModel?.elID);
-            return;
+    synced(isRevealed) {
+        console.groupCollapsed(`RootView: synced: ${isRevealed ? "revealed" : "hidden"}: creating elements for data:`, this.sceneModel.syncedElementData);
+        for (const elID of this.sceneModel.syncedElementData.keys()) {
+            this.addElement(elID)
         }
-        console.info('ComponentView: init ComponentModel from A-Frame element:', this.aframeEl);
-
-        this.aframeEl.addEventListener('setAttribute-event', this.handlers.onSetAttribute);
-
-        let newModelComponents = {};
-        let elementComponents = this.aframeEl?.components;
-        const isAvatar = this.elementModel?.elID?.startsWith(Q.AVATAR_PREFIX);
-
-        // Filters component values & replaces elements with IDs, so the model can save them
-        Object.keys(elementComponents).forEach(componentName => {
-            const prop = this.aframeEl?.getAttribute(componentName);
-            const [isSyncable, substitutedValue] = filterComponent(isAvatar, componentName, prop);
-            if (isSyncable) {
-                newModelComponents[componentName] = substitutedValue;
-            }
-        })
-        this.publish(this.elementModel.id, 'changeComponent', { data: newModelComponents, senderId: this.viewId });
+        console.groupEnd();
     }
 
-    onSetAttribute(event) {
-        const isAvatar = this.elementModel?.elID?.startsWith(Q.AVATAR_PREFIX);
-        let data = event.detail.data;
-        const [isSyncable, substitutedValue] = filterComponent(isAvatar, data.attrName, data.value);
+    onUserAdded(data) {
+        const userLabel = data.viewId === this.viewId ? 'local' : 'remote';
+        console.debug(`RootView: ${userLabel} user added:`, data);
+        this.aframeScene.emit('user-added', data);
+    }
+
+    onUserExit(data) {
+        this.aframeScene.emit('user-exit', data);
+    }
+
+    removeElement(childID) {
+        const elementsToDelete = new Set(document.querySelectorAll('#' + childID));
+        const element = this.elements.get(childID);
+        if (element) {
+            elementsToDelete.add(element);
+            this.elements.delete(childID);
+        }
+
+        console.debug(`RootView: removeElement: removing ${childID} elements:`, elementsToDelete);
+        for (const element of elementsToDelete) {
+            try {
+                element.parentNode?.removeChild(element);
+                element.destroy?.();   // only A-Frame elements have this
+            } catch (err) {
+                console.error(`while removing element:`, err, element);
+            }
+        }
+    }
+
+    setComponentInModel(element, componentName, componentValue) {
+        const isAvatar = element.id?.startsWith(Q.AVATAR_PREFIX);
+        const [isSyncable, substitutedValue] = filterComponent(isAvatar, componentName, componentValue);
         if (isSyncable) {
             if (!isAvatar) {
-                console.debug(`onSetAttribute syncing`, data.attrName, substitutedValue)
+                console.debug(`RootView: setComponentInModel:`, element.id, componentName, substitutedValue)
             }
-            this.publish(this.elementModel.id, 'changeComponent', { data: { [data.attrName]: substitutedValue }, senderId: this.viewId });
-        } else {
-            console.debug(`onSetAttribute not syncing`, data.attrName, substitutedValue)
-        }
-    }
 
-    changeViewAttr(attrName, attrValue) {
-        if (this.aframeEl) {
-            const data = {};
-            data[attrName] = attrValue;
-            this.aframeEl.emit('update-aframe-element', {data});
+            this.publish(this.sceneModel.id, 'setComponentInModel', {
+                elID: element.id,
+                  componentName,
+                  componentValue: substitutedValue,
+                  senderId: this.viewId
+              });
         } else {
-            console.warn(`changeViewAttr: can't update non-existent element ${this.elementModel?.elID} attribute ${attrName}`);
+            console.debug(`RootView: setComponentInModel not sync-able:`, element.id, componentName, substitutedValue)
         }
     }
 
     detach() {
         super.detach();
-
-        if (this.aframeEl) {
-            try {
-                console.debug(`ComponentView: removing element ${this.elementModel?.elID} and view`);
-                this.aframeEl.parentNode?.removeChild(this.aframeEl);
-                this.aframeEl.destroy();
-            } catch (err) {
-                console.error(`while removing A-Frame element:`, err);
-            }
-        } else {
-            console.warn(`ComponentView: can't remove non-existent element ${this.elementModel?.elID}`);
-        }
+        console.info(`RootView detach: not destroying elements`);
     }
+
 }
 
 function filterComponent(isAvatar, componentName, componentValue) {
-    if (!isAvatar || Q.SYNCABLE_ATTRIBUTES.includes(componentName)) {
+    if (!isAvatar || Q.AVATAR_SYNCABLE_ATTRIBUTES.includes(componentName)) {
         try {
             if (componentValue?.attrName === componentName) {
                 console.warn(`component ${componentName} was passed with outer object`)
@@ -554,7 +462,6 @@ function substitute(inputValue, stack) {
 
 
 
-ComponentModel.register("ComponentModel");
 RootModel.register("RootModel");
 
 
@@ -649,6 +556,10 @@ AFRAME.registerComponent('multiuser', {
 
     init: function () {
         let self = this;
+        this.handlers = {
+            setComponent: this.setComponent.bind(this),
+        }
+
         this.scene = this.el.sceneEl;
         this.ready = false;
 
@@ -701,14 +612,16 @@ AFRAME.registerComponent('multiuser', {
         }
         )
 
-        this.el.addEventListener('update-aframe-element', function (event) {
-            for (const [key, value] of Object.entries(event.detail.data)) {
-                self.el.setAttributeAFrame(key, toAFrameValue(key, value));
-                if (! this.id?.startsWith('avatar')) {
-                    console.log(`multiuser component: from model, set attribute “${key}” on element to:`, value)
-                }
-            }
-        })
+        this.el.addEventListener('update-component', this.handlers.setComponent);
+    },
+
+    setComponent: function (evt) {
+        const {componentName, componentValue} = evt.detail;
+        const aFrameValue = toAFrameValue(componentName, componentValue);
+        if (! this.el.id?.startsWith('avatar')) {
+            console.debug(`multiuser: setComponent: setting element “${this.el.id}” component “${componentName}” to`, aFrameValue);
+        }
+        this.el.setAttributeAFrame(componentName, aFrameValue);
     },
 
     //Original definition from A-Frame master
@@ -793,6 +706,9 @@ AFRAME.registerComponent('multiuser', {
                 return;
             }
 
+            const isInitialized = attrName in this.components;
+            const oldAttrValue = this.components[attrName]?.attrValue;
+
             // Initialize component first if not yet initialized.
             if (!this.components[attrName] && this.hasAttribute(attrName)) {
                 this.updateComponent(
@@ -817,13 +733,17 @@ AFRAME.registerComponent('multiuser', {
                 clobber = (arg2 === true);
             }
 
+            const isEqual = AFRAME.utils.deepEqual(newAttrValue, oldAttrValue);
+
             // Update component
             this.updateComponent(attrName, newAttrValue, clobber);
 
-            if (Q.THROTTLED_ATTRIBUTES.includes(attrName)) {
-                self.updateView(attrName, newAttrValue);
+            if (this.sceneEl.rootView) {
+                if ( !isInitialized || !isEqual ) {
+                    this.sceneEl.rootView.setComponentInModel(self.el, attrName, newAttrValue);
+                }
             } else {
-                this.emit('setAttribute-event', { data: { attrName: attrName, value: newAttrValue, clobber: clobber } }, false)
+                console.warn(`multiuser: can't call setComponentInModel, as sceneEl.rootView is not yet set`, self.el, attrName, newAttrValue);
             }
 
             // In debug mode, write component data up to the DOM.
@@ -844,11 +764,6 @@ AFRAME.registerComponent('multiuser', {
 
         // this.scene.emit('deleteComponent', { data: this.el.id }, false);
 
-    },
-
-    updateView: function(attrName, value) {
-        // console.debug(`multiuser component: updating ${this.el.id} ${attrName} to`, value);
-        this.el.emit('setAttribute-event', {data: {attrName, value}}, false);
     },
 
     tick: (function () {   // Uses IIFE to allocate v only once
