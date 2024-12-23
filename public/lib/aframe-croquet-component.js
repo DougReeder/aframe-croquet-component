@@ -356,7 +356,7 @@ class RootView extends Croquet.View {
     }
 
     synced(isRevealed) {
-        console.groupCollapsed(`RootView: synced: ${isRevealed ? "revealed" : "hidden"}: creating elements for data:`, this.sceneModel.syncedElementData);
+        console.groupCollapsed(`RootView: synced: ${isRevealed ? "revealed" : "hidden"}: creating/updating elements for data:`, this.sceneModel.syncedElementData);
         for (const elID of this.sceneModel.syncedElementData.keys()) {
             this.addElement(elID)
         }
@@ -471,6 +471,7 @@ AFRAME.registerComponent('croquet', {
         sessionName: { default: 'demo' },
         password: { default: 'demo' },
         apiKey: {default: 'myApiKey'},
+        tps: { type: 'number', default: 20 },   // ticks per second
         spawnPoint: {type: 'vec3'},
     },
 
@@ -486,6 +487,7 @@ AFRAME.registerComponent('croquet', {
                 appId: "com.aframe.multiuser",
                 name: sessionName,
                 password: password,
+                tps: this.data.tps,
                 model: RootModel,
                 options: {spawnPoint: this.data.spawnPoint},
                 view: RootView
