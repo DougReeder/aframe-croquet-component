@@ -527,6 +527,7 @@ AFRAME.registerComponent('croquet', {
                 xrSession = null
             }
 
+            this.el.croquetSession = session;
             this.el.addEventListener('enter-vr', startXRSession);
             this.el.addEventListener('exit-vr', onXRSessionEnded);
 
