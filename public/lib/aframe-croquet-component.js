@@ -324,7 +324,7 @@ class RootView extends Croquet.View {
                     document.createElement('a-box');
             }
             element.setAttribute('id', elementData.elID);
-            element.setAttribute('color', elementData.color);
+            element.setAttribute('object-tint', elementData.color);
             for (const componentName of Q.AVATAR_SYNCABLE_ATTRIBUTES) {
                 if (componentName in elementData.components) {
                     const aFrameValue = toAFrameValue(componentName, elementData.components[componentName])
@@ -851,4 +851,63 @@ AFRAME.registerComponent('rotationquaternion', {
             console.warn(`rotationquaternion: not updating ${this.el.id} with NaN:`, this.data)
         }
     }
+});
+
+
+
+// a component to set the hue and saturation of every material in this object
+AFRAME.registerComponent('object-tint', {
+    dependencies: [],
+
+    schema: { type: 'color', default: 'white' },
+
+    /** Called once when component is attached. Generally for initial setup. */
+    init: function () {
+    },
+
+    /** Called when properties are changed, incl. right after init */
+    update: function (_oldData) {
+        console.debug(`object-tint update:`, this.data, this.el);
+
+        // tints existing meshes
+        this.tintMeshes(this.el, this.data, new Event('model-loaded'));
+        // tints meshes after they load
+        this.el.addEventListener('model-loaded', this.tintMeshes.bind(this, this.el, this.data), {once: true});
+    },
+
+    /** sets hue and saturation to match the color passed */
+    tintMeshes: function (elmt, colorName, _evt) {
+        console.debug(`object-tint tintObject:`, colorName, elmt);
+
+        const nominalColor = new THREE.Color(colorName);
+        const nominalHSL = {};
+        nominalColor.getHSL(nominalHSL);
+        const newHSL = {};
+        elmt.object3D.traverse(descendant => {
+            try {
+                if (descendant.isMesh && descendant.material?.color?.isColor) {
+                    descendant.material.color.getHSL(newHSL);
+                    newHSL.h = nominalHSL.h;
+                    newHSL.s = Math.max(newHSL.s, nominalHSL.s);
+                    newHSL.l = Math.min(newHSL.l, .8);
+                    descendant.material.color.setHSL(newHSL.h, newHSL.s, newHSL.l);
+                    // console.debug(`object-tint update:`, descendant.material?.color);
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        });
+    },
+
+
+    pause: function () {
+    },
+
+    play: function () {
+    },
+
+    /** Called when a component is removed (e.g., via removeAttribute). */
+    remove: function () {
+    },
+
 });
