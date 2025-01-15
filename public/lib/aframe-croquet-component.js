@@ -567,37 +567,40 @@ AFRAME.registerComponent('multiuser', {
         this.ready = false;
 
         if (this.el.dataset.isLocalAvatar) {
-            this.cameraEnt = this.scene.querySelector('[camera]');
-            this.rigEnt = this.cameraEnt?.parentElement;
-            if ('A-SCENE' === this.rigEnt.nodeName) {
-                this.rigEnt = this.cameraEnt;
+            const cameraEnt = this.scene.querySelector('[camera]');
+            this.cameraObj = cameraEnt.object3D;
+            if (this.cameraObj?.children?.[0].isObject3D) {
+                this.cameraObj = this.cameraObj.children[0];
             }
 
-            const position = structuredClone(this.el.components.position?.attrValue);
-            if (Number.isFinite(position?.x) && Number.isFinite(position?.y) && Number.isFinite(position?.z)) {
-                position.y -= Q.CAMERA_HEIGHT;
-                console.info(`multiuser: from avatar, setting rig position to`, position);
-                this.rigEnt.setAttribute('position', position);
-            } else {
-                console.warn(`multiuser: bad position of avatar:`, position);
-            }
+            const rigEnt = cameraEnt?.parentElement;
+            if ('A-SCENE' !== rigEnt.nodeName) {
+                const position = structuredClone(this.el.components.position?.attrValue);
+                if (Number.isFinite(position?.x) && Number.isFinite(position?.y) && Number.isFinite(position?.z)) {
+                    position.y -= Q.CAMERA_HEIGHT;
+                    console.info(`multiuser: from avatar, setting rig position to`, position);
+                    rigEnt.setAttribute('position', position);
+                } else {
+                    console.warn(`multiuser: bad position of avatar:`, position);
+                }
 
-            const qCamera = new THREE.Quaternion();
-            qCamera.copy(this.cameraEnt.object3D.quaternion);
-            qCamera.invert();
-            const q = new THREE.Quaternion();
-            q.setFromEuler(new THREE.Euler(
-                THREE.MathUtils.degToRad(this.el.components.rotation?.attrValue?.x),
-                THREE.MathUtils.degToRad(this.el.components.rotation?.attrValue?.y),
-                THREE.MathUtils.degToRad(this.el.components.rotation?.attrValue?.z),
-                'XYZ'));
-            q.multiply(Q.FLIP_Z_INV);
-            q.multiply(qCamera);
-            if (Number.isFinite(q.x) && Number.isFinite(q.y) && Number.isFinite(q.z) && Number.isFinite(q.w)) {
-                this.rigEnt.object3D.quaternion.copy(q);
-                console.info(`multiuser: from avatar, setting quaternion of rig to:`, q);
-            } else {
-                console.warn(`multiuser: bad rotation of avatar or quaternion of camera:`, q, qCamera);
+                const qCamera = new THREE.Quaternion();
+                qCamera.copy(this.cameraObj.quaternion);
+                qCamera.invert();
+                const q = new THREE.Quaternion();
+                q.setFromEuler(new THREE.Euler(
+                  THREE.MathUtils.degToRad(this.el.components.rotation?.attrValue?.x),
+                  THREE.MathUtils.degToRad(this.el.components.rotation?.attrValue?.y),
+                  THREE.MathUtils.degToRad(this.el.components.rotation?.attrValue?.z),
+                  'XYZ'));
+                q.multiply(Q.FLIP_Z_INV);
+                q.multiply(qCamera);
+                if (Number.isFinite(q.x) && Number.isFinite(q.y) && Number.isFinite(q.z) && Number.isFinite(q.w)) {
+                    rigEnt.object3D.quaternion.copy(q);
+                    console.info(`multiuser: from avatar, setting quaternion of rig to:`, q);
+                } else {
+                    console.warn(`multiuser: bad rotation of avatar or quaternion of camera:`, q, qCamera);
+                }
             }
         }
 
@@ -777,18 +780,17 @@ AFRAME.registerComponent('multiuser', {
             if (!this.ready) {
                 this.scene.emit('add-multiuser', { comp: this }, false);
             } else {
-                if (this.cameraEnt) {   // then this.el is the local avatar element
+                if (this.cameraObj) {   // then this.el is the local avatar element
                     try {
-                        let cameraObject3D = this.cameraEnt.object3D;
                         v.set(0, 0, 0);
-                        cameraObject3D.localToWorld(v);
+                        this.cameraObj.localToWorld(v);
                         if (Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z)) {
                             this.el.setAttribute('position', structuredClone(v));
                         } else {
                             console.debug(`multiuser: not updating avatar position with NaN:`, v);
                         }
 
-                        q.setFromRotationMatrix(cameraObject3D.matrixWorld);
+                        q.setFromRotationMatrix(this.cameraObj.matrixWorld);
                         q.multiply(Q.FLIP_Z);
                         if (Number.isFinite(q.x) && Number.isFinite(q.y) && Number.isFinite(q.z) && Number.isFinite(q.w)) {
                             this.el.setAttribute('rotationquaternion', q);
