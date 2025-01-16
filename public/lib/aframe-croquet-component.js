@@ -14,7 +14,7 @@ Q.MODEL_CHANGED_PREFIX = Q.MODEL_CHANGED + '-';
 Q.AVATAR_PREFIX = 'avatar-';
 Q.THROTTLED_ATTRIBUTES = ['position', 'rotation', 'rotationquaternion', 'scale'];
 Q.AVATAR_SYNCABLE_ATTRIBUTES = [...Q.THROTTLED_ATTRIBUTES, 'multiuser'];
-Q.COLORS = ['purple', 'blue', 'green', 'orange', 'yellow', 'red', 'gray', 'white', 'maroon', 'navy', 'aqua', 'lime', 'olive', 'teal', 'fuchsia', 'silver', 'black'];
+Q.COLORS = ['red', 'yellow', 'orange', 'green', 'blue', 'purple', 'white', 'black', 'aqua'];
 Q.CAMERA_HEIGHT = 1.6;
 Q.INITIAL_PLACEMENT_RADIUS = 2;
 Q.FLIP_Z = new THREE.Quaternion(0, -1, 0, 0);
@@ -327,8 +327,23 @@ class RootView extends Croquet.View {
             element.setAttribute('object-tint', elementData.color);
             for (const componentName of Q.AVATAR_SYNCABLE_ATTRIBUTES) {
                 if (componentName in elementData.components) {
-                    const aFrameValue = toAFrameValue(componentName, elementData.components[componentName])
-                    element.setAttribute(componentName, aFrameValue);
+                    try {
+                        if ('rotation' === componentName) {
+                            const euler = new THREE.Euler(
+                              THREE.MathUtils.degToRad(elementData.components[componentName].x),
+                              THREE.MathUtils.degToRad(elementData.components[componentName].y),
+                              THREE.MathUtils.degToRad(elementData.components[componentName].z),
+                            );
+                            const q = new THREE.Quaternion();
+                            q.setFromEuler(euler);
+                            element.setAttribute('rotationquaternion', q);
+                        } else {
+                            const aFrameValue = toAFrameValue(componentName, elementData.components[componentName])
+                            element.setAttribute(componentName, aFrameValue);
+                        }
+                    } catch (err) {
+                        console.error(`RootView createElement ${componentName} ${elementData.components[componentName]}:`, err);
+                    }
                 }
             }
         } else {   // ordinary A-Frame element
@@ -568,10 +583,7 @@ AFRAME.registerComponent('multiuser', {
 
         if (this.el.dataset.isLocalAvatar) {
             const cameraEnt = this.scene.querySelector('[camera]');
-            this.cameraObj = cameraEnt.object3D;
-            if (this.cameraObj?.children?.[0].isObject3D) {
-                this.cameraObj = this.cameraObj.children[0];
-            }
+            this.cameraObj = cameraEnt.getObject3D('camera') ?? cameraEnt.object3D;
 
             const rigEnt = cameraEnt?.parentElement;
             if ('A-SCENE' !== rigEnt.nodeName) {
@@ -889,9 +901,17 @@ AFRAME.registerComponent('object-tint', {
             try {
                 if (descendant.isMesh && descendant.material?.color?.isColor) {
                     descendant.material.color.getHSL(newHSL);
-                    newHSL.h = nominalHSL.h;
-                    newHSL.s = Math.max(newHSL.s, nominalHSL.s);
-                    newHSL.l = Math.min(newHSL.l, .8);
+                    switch (colorName) {
+                        case 'white':
+                        case 'black':
+                            newHSL.s = (newHSL.s + 2 * nominalHSL.s) / 3;
+                            newHSL.l = (newHSL.l + 2 * nominalHSL.l) / 3;
+                            break;
+                        default:
+                            newHSL.h = nominalHSL.h;
+                            newHSL.s = Math.max(newHSL.s, nominalHSL.s);
+                            newHSL.l = Math.min(newHSL.l, .8);
+                    }
                     descendant.material.color.setHSL(newHSL.h, newHSL.s, newHSL.l);
                     // console.debug(`object-tint update:`, descendant.material?.color);
                 }
