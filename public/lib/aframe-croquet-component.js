@@ -98,7 +98,7 @@ class RootModel extends Croquet.Model {
             const x = this.spawnPoint.x + Q.INITIAL_PLACEMENT_RADIUS * Math.sin(theta);
             const y = this.spawnPoint.y + Q.CAMERA_HEIGHT;
             const z = this.spawnPoint.z + Q.INITIAL_PLACEMENT_RADIUS * Math.cos(theta);
-            const heading = THREE.MathUtils.radToDeg(theta) + 180;
+            const heading = THREE.MathUtils.radToDeg(theta) - 180;
             data = {
                 online: true,
                 start: this.now(),
@@ -330,18 +330,10 @@ class RootView extends Croquet.View {
             for (const componentName of Q.AVATAR_SYNCABLE_ATTRIBUTES) {
                 if (componentName in elementData.components) {
                     try {
-                        if ('rotation' === componentName) {
-                            const euler = new THREE.Euler(
-                              THREE.MathUtils.degToRad(elementData.components[componentName].x),
-                              THREE.MathUtils.degToRad(elementData.components[componentName].y),
-                              THREE.MathUtils.degToRad(elementData.components[componentName].z),
-                            );
-                            const q = new THREE.Quaternion();
-                            q.setFromEuler(euler);
-                            element.setAttribute('rotationquaternion', q);
-                        } else {
-                            const aFrameValue = toAFrameValue(componentName, elementData.components[componentName])
-                            element.setAttribute(componentName, aFrameValue);
+                        const aFrameValue = toAFrameValue(componentName, elementData.components[componentName])
+                        element.setAttribute(componentName, aFrameValue);
+                        if (['position', 'rotation', 'rotationquaternion'].includes(componentName)) {
+                            console.debug(`RootView createElement ${elementData.elID} ${elementData.color} ${componentName}=${JSON.stringify(aFrameValue)}`, element.components?.[componentName]?.data, JSON.stringify(element.getAttribute(componentName)));
                         }
                     } catch (err) {
                         console.error(`RootView createElement ${componentName} ${elementData.components[componentName]}:`, err);
@@ -586,36 +578,6 @@ AFRAME.registerComponent('multiuser', {
         if (this.el.dataset.isLocalAvatar) {
             const cameraEnt = this.scene.querySelector('[camera]');
             this.cameraObj = cameraEnt.getObject3D('camera') ?? cameraEnt.object3D;
-
-            const rigEnt = cameraEnt?.parentElement;
-            if ('A-SCENE' !== rigEnt.nodeName) {
-                const position = structuredClone(this.el.components.position?.attrValue);
-                if (Number.isFinite(position?.x) && Number.isFinite(position?.y) && Number.isFinite(position?.z)) {
-                    position.y -= Q.CAMERA_HEIGHT;
-                    console.info(`multiuser: from avatar, setting rig position to`, position);
-                    rigEnt.setAttribute('position', position);
-                } else {
-                    console.warn(`multiuser: bad position of avatar:`, position);
-                }
-
-                const qCamera = new THREE.Quaternion();
-                qCamera.copy(this.cameraObj.quaternion);
-                qCamera.invert();
-                const q = new THREE.Quaternion();
-                q.setFromEuler(new THREE.Euler(
-                  THREE.MathUtils.degToRad(this.el.components.rotation?.attrValue?.x),
-                  THREE.MathUtils.degToRad(this.el.components.rotation?.attrValue?.y),
-                  THREE.MathUtils.degToRad(this.el.components.rotation?.attrValue?.z),
-                  'XYZ'));
-                q.multiply(Q.FLIP_Z_INV);
-                q.multiply(qCamera);
-                if (Number.isFinite(q.x) && Number.isFinite(q.y) && Number.isFinite(q.z) && Number.isFinite(q.w)) {
-                    rigEnt.object3D.quaternion.copy(q);
-                    console.info(`multiuser: from avatar, setting quaternion of rig to:`, q);
-                } else {
-                    console.warn(`multiuser: bad rotation of avatar or quaternion of camera:`, q, qCamera);
-                }
-            }
         }
 
         Reflect.defineProperty(this.el,
@@ -809,7 +771,7 @@ AFRAME.registerComponent('multiuser', {
                         if (Number.isFinite(q.x) && Number.isFinite(q.y) && Number.isFinite(q.z) && Number.isFinite(q.w)) {
                             this.el.setAttribute('rotationquaternion', q);
                         } else {
-                            console.debug(`multiuser: not updating avatar rotation with NaN:`, rotation);
+                            console.debug(`multiuser: not updating avatar rotationquaternion with NaN:`, q);
                         }
                     } catch (err) {
                         console.error("while copying camera position & rotation to avatar:", err);
