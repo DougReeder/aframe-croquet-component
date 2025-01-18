@@ -12,6 +12,7 @@ Q.STEP_MS = 1000 / 20;
 Q.MODEL_CHANGED = 'modelChanged';
 Q.MODEL_CHANGED_PREFIX = Q.MODEL_CHANGED + '-';
 Q.AVATAR_PREFIX = 'avatar-';
+Q.CURSOR_PREFIX = 'cursor-';
 Q.THROTTLED_ATTRIBUTES = ['position', 'rotation', 'rotationquaternion', 'scale'];
 Q.AVATAR_SYNCABLE_ATTRIBUTES = [...Q.THROTTLED_ATTRIBUTES, 'multiuser'];
 Q.COLORS = ['red', 'yellow', 'orange', 'green', 'blue', 'purple', 'white', 'black', 'aqua'];
@@ -163,8 +164,7 @@ class RootModel extends Croquet.Model {
         const components = this.syncedElementData.get(elID)?.components;
         if (components) {
             this.merge(components, { [componentName]: componentValue });
-            const isAvatar = elID.startsWith('avatar');
-            if (!isAvatar) {
+            if (! elID.startsWith(Q.AVATAR_PREFIX) && ! elID.startsWith(Q.CURSOR_PREFIX)) {
                 console.debug(`RootModel: setComponentInModel setting`, elID, componentName, components[componentName]);
             }
             const eventName = Q.THROTTLED_ATTRIBUTES.includes(componentName) ?
@@ -194,6 +194,8 @@ class RootModel extends Croquet.Model {
     }
 
 }
+
+const MAX_RAD_PER_SEC = 1 * 2 * Math.PI;   // heuristic for smother cursor
 
 class RootView extends Croquet.View {
 
@@ -411,7 +413,7 @@ class RootView extends Croquet.View {
         const isAvatar = element.id?.startsWith(Q.AVATAR_PREFIX);
         const [isSyncable, substitutedValue] = filterComponent(isAvatar, componentName, componentValue);
         if (isSyncable) {
-            if (!isAvatar) {
+            if (!isAvatar && ! element.id?.startsWith(Q.CURSOR_PREFIX)) {
                 console.debug(`RootView: setComponentInModel:`, element.id, componentName, substitutedValue)
             }
 
@@ -636,7 +638,7 @@ AFRAME.registerComponent('multiuser', {
     setComponent: function (evt) {
         const {componentName, componentValue} = evt.detail;
         const aFrameValue = toAFrameValue(componentName, componentValue);
-        if (! this.el.id?.startsWith('avatar')) {
+        if (! this.el.id?.startsWith(Q.AVATAR_PREFIX) && ! this.el.id?.startsWith(Q.CURSOR_PREFIX)) {
             console.debug(`multiuser: setComponent: setting element “${this.el.id}” component “${componentName}” to`, aFrameValue);
         }
         this.el.setAttributeAFrame(componentName, aFrameValue);
@@ -859,12 +861,31 @@ AFRAME.registerComponent('rotationquaternion', {
 
     update: function (oldData) {
         // console.debug(`Updating rotationQuaternion from`, oldData, `to:`, this.data);
-        if (Number.isFinite(this.data.x) && Number.isFinite(this.data.y) && Number.isFinite(this.data.z) && Number.isFinite(this.data.w)) {
-            this.el.object3D.quaternion.copy(this.data);
-        } else {
+        if (!Number.isFinite(this.data.x) || !Number.isFinite(this.data.y) || !Number.isFinite(this.data.z) || !Number.isFinite(this.data.w)) {
             console.warn(`rotationquaternion: not updating ${this.el.id} with NaN:`, this.data)
         }
-    }
+    },
+
+    quaternion: new THREE.Quaternion(),
+
+    tick: function (time, timeDelta) {
+        try {
+            if (this.el.object3D.quaternion.x === this.data.x && this.el.object3D.quaternion.y === this.data.y &&
+              this.el.object3D.quaternion.z === this.data.z && this.el.object3D.quaternion.x === this.data.w) { return; }
+            if (!(Number.isFinite(this.data.x) && Number.isFinite(this.data.y) && Number.isFinite(this.data.z) &&
+              Number.isFinite(this.data.w))) { return; }
+
+            if (Number.isFinite(this.el.object3D.quaternion.x) && Number.isFinite(this.el.object3D.quaternion.y) &&
+              Number.isFinite(this.el.object3D.quaternion.z) && Number.isFinite(this.el.object3D.quaternion.w)) {
+                this.quaternion.copy(this.data);   // can't rotate toward a non-quaternion
+                this.el.object3D.quaternion.rotateTowards(this.quaternion, MAX_RAD_PER_SEC * timeDelta / 1000);
+            } else {
+                this.el.object3D.quaternion.copy(this.data);
+            }
+        } catch (err) {
+            console.error(`rotatequaternion tick:`, err);
+        }
+    },
 });
 
 
