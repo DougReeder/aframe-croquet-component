@@ -1,6 +1,6 @@
 {
   "name": "aframe-croquet-component",
-  "description": "A-Frame multiuser component based on Croquet V",
+  "description": "A-Frame multiuser component based on Multisynq V",
   "version": "0.0.11",
   "author": "Nikolai Suslov",
   "homepage": "https://croquet.krestianstvo.org",
@@ -16,7 +16,7 @@
     "start": "budo --dir public --live --verbose --open --ssl --cors"
   },
   "keywords": [
-    "croquet"
+    "multisynq"
   ],
   "readmeFilename": "README.md",
   "license": "MIT"

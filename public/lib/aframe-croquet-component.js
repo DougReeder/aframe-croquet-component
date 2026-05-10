@@ -7,7 +7,7 @@ if (typeof AFRAME === 'undefined') {
     throw new Error('Component attempted to register before AFRAME was available.');
 }
 
-let Q = Croquet.Constants;
+let Q = Multisynq.Constants;
 Q.STEP_MS = 1000 / 20;
 Q.MODEL_CHANGED = 'modelChanged';
 Q.MODEL_CHANGED_PREFIX = Q.MODEL_CHANGED + '-';
@@ -21,7 +21,7 @@ Q.INITIAL_PLACEMENT_RADIUS = 2;
 Q.FLIP_Z = new THREE.Quaternion(0, -1, 0, 0);
 Q.FLIP_Z_INV = new THREE.Quaternion(0, 1, 0, 0);
 
-class RootModel extends Croquet.Model {
+class RootModel extends Multisynq.Model {
     static types() {
         return {
             "THREE.Quaternion": {
@@ -197,7 +197,7 @@ class RootModel extends Croquet.Model {
 
 const MAX_RAD_PER_SEC = 1 * 2 * Math.PI;   // heuristic for smother cursor
 
-class RootView extends Croquet.View {
+class RootView extends Multisynq.View {
 
     constructor(model) {
         super(model);
@@ -485,12 +485,12 @@ AFRAME.registerComponent('croquet', {
     },
 
     init: function () {
-        //Croquet.startSession(this.data.sessionName, RootModel, RootView);
-        //Croquet.startSession(this.data.sessionName, RootModel, RootView, { step: "manual" })
-        let sessionName = this.data.sessionName == 'demo' ? Croquet.App.autoSession() : this.data.sessionName;
-        let password = this.data.password == 'demo' ? Croquet.App.autoPassword() : this.data.password;
+        //Multisynq.startSession(this.data.sessionName, RootModel, RootView);
+        //Multisynq.startSession(this.data.sessionName, RootModel, RootView, { step: "manual" })
+        let sessionName = this.data.sessionName == 'demo' ? Multisynq.App.autoSession() : this.data.sessionName;
+        let password = this.data.password == 'demo' ? Multisynq.App.autoPassword() : this.data.password;
         let apiKey = this.data.apiKey == 'myApiKey' ? '1MAgJydFdvcKpGkHe7bhxLmr3Hj4mofPKvC06mpII' : this.data.apiKey;
-        Croquet.Session.join(
+        Multisynq.Session.join(
             {
                 apiKey: apiKey,
                 appId: "com.aframe.multiuser",
