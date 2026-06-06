@@ -1,6 +1,6 @@
 /*
 The MIT License (MIT)
-Copyright (c) 2019-2023 Nikolai Suslov | Krestianstvo.org and contributors
+Copyright (c) 2019-2026 Nikolai Suslov | Krestianstvo.org and contributors
 */
 
 if (typeof AFRAME === 'undefined') {
@@ -480,6 +480,9 @@ AFRAME.registerComponent('croquet', {
         sessionName: { default: 'demo' },
         password: { default: 'demo' },
         apiKey: {default: 'myApiKey'},
+        reflector: {type: 'string', default: undefined},
+        files: {type: 'string', default: undefined},
+        box: {type: 'string', default: undefined}, // reflector + files
         tps: { type: 'number', default: 20 },   // ticks per second
         spawnPoint: {type: 'vec3'},
     },
@@ -496,6 +499,9 @@ AFRAME.registerComponent('croquet', {
                 appId: "com.aframe.multiuser",
                 name: sessionName,
                 password: password,
+                reflector: this.data.reflector,
+                files: this.data.files,
+                box: this.data.box,
                 tps: this.data.tps,
                 model: RootModel,
                 options: {spawnPoint: this.data.spawnPoint},
