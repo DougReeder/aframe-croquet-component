@@ -1,6 +1,6 @@
 /*
 The MIT License (MIT)
-Copyright (c) 2019-2023 Nikolai Suslov | Krestianstvo.org and contributors
+Copyright (c) 2019-2026 Nikolai Suslov | Krestianstvo.org and contributors
 */
 
 if (typeof AFRAME === 'undefined') {
@@ -479,7 +479,10 @@ AFRAME.registerComponent('croquet', {
     schema: {
         sessionName: { default: 'demo' },
         password: { default: 'demo' },
-        apiKey: {default: 'myApiKey'},
+        apiKey: { type: 'string' },
+        reflector: { type: 'string' },
+        files: { type: 'string' },
+        box: { type: 'string'} , // reflector + files
         tps: { type: 'number', default: 20 },   // ticks per second
         spawnPoint: {type: 'vec3'},
     },
@@ -489,13 +492,19 @@ AFRAME.registerComponent('croquet', {
         //Multisynq.startSession(this.data.sessionName, RootModel, RootView, { step: "manual" })
         let sessionName = this.data.sessionName == 'demo' ? Multisynq.App.autoSession() : this.data.sessionName;
         let password = this.data.password == 'demo' ? Multisynq.App.autoPassword() : this.data.password;
-        let apiKey = this.data.apiKey == 'myApiKey' ? '1MAgJydFdvcKpGkHe7bhxLmr3Hj4mofPKvC06mpII' : this.data.apiKey;
+        let apiKey = this.data.apiKey;
+        if (!apiKey && !this.data.reflector && !this.data.box) {
+            throw new RangeError("one of reflector, box, or apiKey must be specified");
+        }
         Multisynq.Session.join(
             {
                 apiKey: apiKey,
                 appId: "com.aframe.multiuser",
                 name: sessionName,
                 password: password,
+                reflector: this.data.reflector,
+                files: this.data.files,
+                box: this.data.box,
                 tps: this.data.tps,
                 model: RootModel,
                 options: {spawnPoint: this.data.spawnPoint},
