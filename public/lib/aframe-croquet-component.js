@@ -479,10 +479,10 @@ AFRAME.registerComponent('croquet', {
     schema: {
         sessionName: { default: 'demo' },
         password: { default: 'demo' },
-        apiKey: {default: 'myApiKey'},
-        reflector: {type: 'string'},
-        files: {type: 'string'},
-        box: {type: 'string'}, // reflector + files
+        apiKey: { type: 'string' },
+        reflector: { type: 'string' },
+        files: { type: 'string' },
+        box: { type: 'string'} , // reflector + files
         tps: { type: 'number', default: 20 },   // ticks per second
         spawnPoint: {type: 'vec3'},
     },
