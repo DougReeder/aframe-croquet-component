@@ -493,6 +493,9 @@ AFRAME.registerComponent('croquet', {
         let sessionName = this.data.sessionName == 'demo' ? Multisynq.App.autoSession() : this.data.sessionName;
         let password = this.data.password == 'demo' ? Multisynq.App.autoPassword() : this.data.password;
         let apiKey = this.data.apiKey;
+        if (!apiKey && (!this.data.reflector || !this.data.box)) {
+            throw new RangeError("one of reflector, box, or apiKey must be specified");
+        }
         Multisynq.Session.join(
             {
                 apiKey: apiKey,
