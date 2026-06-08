@@ -492,7 +492,7 @@ AFRAME.registerComponent('croquet', {
         //Multisynq.startSession(this.data.sessionName, RootModel, RootView, { step: "manual" })
         let sessionName = this.data.sessionName == 'demo' ? Multisynq.App.autoSession() : this.data.sessionName;
         let password = this.data.password == 'demo' ? Multisynq.App.autoPassword() : this.data.password;
-        let apiKey = this.data.apiKey == this.data.apiKey;
+        let apiKey = this.data.apiKey;
         Multisynq.Session.join(
             {
                 apiKey: apiKey,
