@@ -114,7 +114,6 @@ class RootModel extends Multisynq.Model {
         const userElementData = this.syncedElementData.get(elID);
         if (userElementData) {
             console.debug(`RootModel: user ${data.color} ${viewId} joining; elementData exists:`, userElementData);
-
         } else {
             const options = {
                 elID: elID,
@@ -218,7 +217,6 @@ class RootView extends Multisynq.View {
                 if (!comp.el?.id) { throw new Error("multiuser element must have ID")}
                 comp.ready = true;
                 if (! self.elements.has(comp.el?.id)) {
-                    console.debug('RootView: multiuser component ready; creating elementData:', comp.el?.id, event.detail);
                     const isAvatar = comp.el?.id?.startsWith(Q.AVATAR_PREFIX);
                     const components = {};
                     for (const [componentName, componentValue] of Object.entries(comp.el.components)) {
@@ -236,6 +234,7 @@ class RootView extends Multisynq.View {
                         scale: sanitizeVec3(comp.el.object3D?.scale, 1, 1, 1),
                         components,
                     };
+                    console.debug('RootView: multiuser component ready; creating elementData:', comp.el?.id, event.detail?.comp?.el, modelData);
                     self.publish(model.id, "add-multiuser-model", modelData);
                 }
             }
@@ -283,12 +282,12 @@ class RootView extends Multisynq.View {
         if (element) {
             console.group('RootView: addElement: updating element:', element);
             for (const [componentName, componentValue] of Object.entries(elementData.components)) {
-                element.emit('update-component', {componentName, componentValue});
+                element.emit('update-component', {componentName, componentValue: structuredClone(componentValue)}, false);
             }
             console.groupEnd();
         } else {
             console.group('RootView: addElement: creating element:', elID, elementData);
-            element = this.createElement(elementData);
+            element = this.createElement(structuredClone(elementData));
             console.groupEnd()
         }
         if (this.elements.has(elID)) {
@@ -304,7 +303,7 @@ class RootView extends Multisynq.View {
         this.elements.set(elID, element);
 
         function changeElementComponent({componentName, componentValue}) {
-            this.emit('update-component', {componentName, componentValue});
+            this.emit('update-component', {componentName, componentValue}, false);
             // this.emit('update-aframe-element', {data: {[componentName]: componentValue}});
         }
     }
@@ -384,11 +383,11 @@ class RootView extends Multisynq.View {
     onUserAdded(data) {
         const userLabel = data.viewId === this.viewId ? 'local' : 'remote';
         console.debug(`RootView: ${userLabel} user added:`, data);
-        this.aframeScene.emit('user-added', data);
+        this.aframeScene.emit('user-added', data, false);
     }
 
     onUserExit(data) {
-        this.aframeScene.emit('user-exit', data);
+        this.aframeScene.emit('user-exit', data, false);
     }
 
     removeElement(childID) {
@@ -835,11 +834,8 @@ function toAFrameValue(attrName, attrValue) {
         case 'material':
             return structuredClone(attrValue);
         default:
-            if (attrValue instanceof Object) {
-                return AFRAME.utils.styleParser.stringify(attrValue);
-            } else {
-                return attrValue;
-            }
+            // AFRAME.utils.styleParser.stringify only handles a single level of members
+            return attrValue;
     }
 }
 
