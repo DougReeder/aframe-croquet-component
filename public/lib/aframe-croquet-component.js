@@ -222,7 +222,7 @@ class RootView extends Multisynq.View {
                     const isAvatar = comp.el?.id?.startsWith(Q.AVATAR_PREFIX);
                     const components = {};
                     for (const [componentName, componentValue] of Object.entries(comp.el.components)) {
-                        const [isSyncable, substitutedValue] = filterComponent(isAvatar, componentName, componentValue?.attrValue);
+                        const [isSyncable, substitutedValue] = filterComponent(isAvatar, componentName, componentValue?.data);
                         if (isSyncable) {
                             components[componentName] = substitutedValue;
                         }
