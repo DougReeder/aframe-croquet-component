@@ -231,6 +231,9 @@ class RootView extends Multisynq.View {
                         elID: comp.el.id,
                         parentID: comp.el.parentEl?.id,
                         elType: comp.el.localName,
+                        position: sanitizeVec3(comp.el.object3D?.position),
+                        rotation: sanitizeVec3(comp.el.object3D?.rotation),
+                        scale: sanitizeVec3(comp.el.object3D?.scale, 1, 1, 1),
                         components,
                     };
                     self.publish(model.id, "add-multiuser-model", modelData);
@@ -345,6 +348,12 @@ class RootView extends Multisynq.View {
             element = document.createElement(elementData.elType);
             element.setAttribute('id', elementData.elID);
             // Model fields MUST NOT be passed to functions that might modify them.
+            const position = sanitizeVec3(elementData.position);
+            element.object3D.position.set(position.x, position.y, position.z);
+            const rotation = sanitizeVec3(elementData.rotation);
+            element.object3D.rotation.set(rotation.x, rotation.y, rotation.z);
+            const scale = sanitizeVec3(elementData.scale);
+            element.object3D.scale.set(scale.x, scale.y, scale.z);
             for (const [componentName, componentValue] of Object.entries(elementData.components)) {
                 element.setAttribute(componentName, toAFrameValue(componentName, componentValue));
             }
@@ -469,6 +478,15 @@ function substitute(inputValue, stack) {
     }
 }
 
+function sanitizeVec3(vec, defaultX = 0, defaultY = 0, defaultZ = 0) {
+    if ('string' === typeof vec) {
+        vec = AFRAME.utils.coordinates.parse(vec);
+    }
+    const x = Number.isFinite(vec?.x) ? vec.x : defaultX;
+    const y = Number.isFinite(vec?.y) ? vec.y : defaultY;
+    const z = Number.isFinite(vec?.z) ? vec.z : defaultZ;
+    return {x, y, z};
+}
 
 
 RootModel.register("RootModel");
@@ -793,20 +811,25 @@ AFRAME.registerComponent('multiuser', {
 
 
 function toAFrameValue(attrName, attrValue) {
+    let x, y, z;
     switch (attrName) {
         case 'position':
         case 'rotation':
-            if ('string' === typeof attrValue && attrValue.length >= 5) {
-                return attrValue;
-            } else {
-                return `${attrValue?.x || 0} ${attrValue?.y || 0} ${attrValue?.z || 0}`;
+            if ('string' === typeof attrValue) {
+                attrValue = AFRAME.utils.coordinates.parse(attrValue);
             }
+            x = Number.isFinite(attrValue?.x) ? attrValue.x : 0;
+            y = Number.isFinite(attrValue?.y) ? attrValue.y : 0;
+            z = Number.isFinite(attrValue?.z) ? attrValue.z : 0;
+            return `${x} ${y} ${z}`;
         case 'scale':
-            if ('string' === typeof attrValue && attrValue.length >= 5) {
-                return attrValue;
-            } else {
-                return `${attrValue?.x || 1} ${attrValue?.y || 1} ${attrValue?.z || 1}`;
+            if ('string' === typeof attrValue) {
+                attrValue = AFRAME.utils.coordinates.parse(attrValue);
             }
+            x = Number.isFinite(attrValue?.x) ? attrValue.x : 1;
+            y = Number.isFinite(attrValue?.y) ? attrValue.y : 1;
+            z = Number.isFinite(attrValue?.z) ? attrValue.z : 1;
+            return `${x} ${y} ${z}`;
         case 'rotationquaternion':
             return attrValue;
         case 'material':
