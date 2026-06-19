@@ -404,7 +404,7 @@ class RootView extends Multisynq.View {
                 element.parentNode?.removeChild(element);
                 element.destroy?.();   // only A-Frame elements have this
             } catch (err) {
-                console.error(`while removing element:`, err, element);
+                console.error(`RootView: while removing element:`, err, element);
             }
         }
     }
@@ -770,7 +770,7 @@ AFRAME.registerComponent('multiuser', {
         //     writable: true
         // })
 
-        // this.scene.emit('deleteComponent', { data: this.el.id }, false);
+        this.scene.emit('deleteComponent', { data: this.el.id }, false);
 
     },
 
