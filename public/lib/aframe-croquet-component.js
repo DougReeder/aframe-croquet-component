@@ -171,7 +171,7 @@ class RootModel extends Multisynq.Model {
               Q.MODEL_CHANGED;
             this.publish(elID, eventName, {componentName, componentValue: components[componentName]});
         } else {
-            console.error(`RootModel: setComponentInModel: no existing components for element ${elID}`);
+            console.warn(`RootModel: setComponentInModel: element ${elID} not yet in Model`);
         }
     }
 
