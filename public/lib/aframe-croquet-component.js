@@ -293,7 +293,7 @@ class RootView extends Multisynq.View {
         if (this.elements.has(elID)) {
             console.debug('RootView: addElement: not re-subscribing', elID);
         } else {
-            console.info('RootView: addElement: subscribing', elID);
+            console.debug('RootView: addElement: subscribing', elID);
             const handler = changeElementComponent.bind(element);
             for (const componentName of Q.THROTTLED_ATTRIBUTES) {
                 this.subscribe(elID, { event: Q.MODEL_CHANGED_PREFIX + componentName, handling: 'oncePerFrame' }, handler);
@@ -500,6 +500,7 @@ AFRAME.registerComponent('croquet', {
         reflector: { type: 'string' },
         files: { type: 'string' },
         box: { type: 'string'} , // reflector + files
+        eventRateLimit: { type: 'number', default: 20 },   // max 60
         tps: { type: 'number', default: 20 },   // ticks per second
         spawnPoint: {type: 'vec3'},
     },
@@ -522,6 +523,7 @@ AFRAME.registerComponent('croquet', {
                 reflector: this.data.reflector,
                 files: this.data.files,
                 box: this.data.box,
+                eventRateLimit: this.data.eventRateLimit,
                 tps: this.data.tps,
                 model: RootModel,
                 options: {spawnPoint: this.data.spawnPoint},
@@ -860,10 +862,10 @@ AFRAME.registerComponent('rotationquaternion', {
 
     tick: function (time, timeDelta) {
         try {
-            if (this.el.object3D.quaternion.x === this.data.x && this.el.object3D.quaternion.y === this.data.y &&
-              this.el.object3D.quaternion.z === this.data.z && this.el.object3D.quaternion.x === this.data.w) { return; }
-            if (!(Number.isFinite(this.data.x) && Number.isFinite(this.data.y) && Number.isFinite(this.data.z) &&
-              Number.isFinite(this.data.w))) { return; }
+            if (this.el.object3D.quaternion.x === this.data?.x && this.el.object3D.quaternion.y === this.data?.y &&
+              this.el.object3D.quaternion.z === this.data?.z && this.el.object3D.quaternion.x === this.data?.w) { return; }
+            if (!(Number.isFinite(this.data?.x) && Number.isFinite(this.data?.y) && Number.isFinite(this.data?.z) &&
+              Number.isFinite(this.data?.w))) { return; }
 
             if (Number.isFinite(this.el.object3D.quaternion.x) && Number.isFinite(this.el.object3D.quaternion.y) &&
               Number.isFinite(this.el.object3D.quaternion.z) && Number.isFinite(this.el.object3D.quaternion.w)) {
