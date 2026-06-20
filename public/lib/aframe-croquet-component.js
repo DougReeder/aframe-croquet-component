@@ -227,6 +227,7 @@ class RootView extends Multisynq.View {
                     }
                     const modelData = {
                         elID: comp.el.id,
+                        class: comp.el.getAttribute('class'),
                         parentID: comp.el.parentEl?.id,
                         elType: comp.el.localName,
                         position: sanitizeVec3(comp.el.object3D?.position),
@@ -346,6 +347,7 @@ class RootView extends Multisynq.View {
             console.debug(`RootView: creating element from`, elementData);
             element = document.createElement(elementData.elType);
             element.setAttribute('id', elementData.elID);
+            element.setAttribute('class', elementData.class);
             // Model fields MUST NOT be passed to functions that might modify them.
             const position = sanitizeVec3(elementData.position);
             element.object3D.position.set(position.x, position.y, position.z);
@@ -910,7 +912,7 @@ AFRAME.registerComponent('object-tint', {
         const nominalHSL = {};
         nominalColor.getHSL(nominalHSL);
         const newHSL = {};
-        elmt.object3D.traverse(descendant => {
+        elmt.object3D?.traverse?.(descendant => {
             try {
                 if (descendant.isMesh && descendant.material?.color?.isColor) {
                     descendant.material.color.getHSL(newHSL);
